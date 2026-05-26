@@ -108,6 +108,16 @@ async function main() {
     },
   });
 
+  const contractor = await prisma.user.create({
+    data: {
+      email: 'contractor@digitalkingsmen.com',
+      passwordHash,
+      fullName: 'Contractor',
+      role: UserRole.contractor,
+      phone: '555-0105',
+    },
+  });
+
   const staffTags = await Promise.all([
     prisma.staffTag.create({
       data: {
@@ -307,6 +317,11 @@ async function main() {
           companyId: company.id,
           userId: employee.id,
           staffTagId: tagBySlug.web_dev.id,
+        },
+        {
+          companyId: company.id,
+          userId: contractor.id,
+          staffTagId: tagBySlug.design.id,
         },
       ],
     });

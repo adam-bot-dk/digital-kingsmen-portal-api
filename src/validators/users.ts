@@ -5,7 +5,7 @@ export const createUserSchema = z.object({
   password: z.string().min(8),
   full_name: z.string().min(1),
   phone: z.string().optional(),
-  role: z.enum(['admin', 'client', 'salesman', 'employee']),
+  role: z.enum(['admin', 'client', 'salesman', 'employee', 'contractor']),
   avatar_url: z.string().url().optional(),
 });
 
@@ -14,7 +14,7 @@ export const updateUserSchema = z.object({
   password: z.string().min(8).optional(),
   full_name: z.string().min(1).optional(),
   phone: z.string().nullable().optional(),
-  role: z.enum(['admin', 'client', 'salesman', 'employee']).optional(),
+  role: z.enum(['admin', 'client', 'salesman', 'employee', 'contractor']).optional(),
   avatar_url: z.string().url().nullable().optional(),
   is_active: z.boolean().optional(),
 });

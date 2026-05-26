@@ -1,3 +1,5 @@
+import { inviteRoleLabel } from './invite.service';
+
 export function appBaseUrl(): string | null {
   const raw = process.env.APP_URL ?? process.env.CORS_ORIGIN?.split(',')[0]?.trim();
   if (!raw) return null;
@@ -34,14 +36,7 @@ export async function sendInviteEmail(opts: {
     year: 'numeric',
   });
 
-  const roleLabel =
-    opts.role === 'client'
-      ? 'client'
-      : opts.role === 'employee'
-        ? 'team member'
-        : opts.role === 'salesman'
-          ? 'sales'
-          : opts.role;
+  const roleLabel = inviteRoleLabel(opts.role as never);
 
   const html = `
     <p>You have been invited to join the Digital Kingsmen portal as a <strong>${roleLabel}</strong>.</p>

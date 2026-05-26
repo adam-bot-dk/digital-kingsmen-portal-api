@@ -42,6 +42,8 @@ Password for all seeded users: `Demo123!`
 | admin@digitalkingsmen.com | admin |
 | client-pure@example.com | client |
 | salesman@digitalkingsmen.com | salesman |
+| employee@digitalkingsmen.com | employee |
+| contractor@digitalkingsmen.com | contractor |
 
 ```bash
 curl -X POST http://localhost:8787/api/auth/login \
@@ -152,3 +154,15 @@ wrangler.toml        # D1, vars, deploy config
 Team management and the admin **Team** page list assignments from the `company_staff_assignments` table (`GET /api/users/:id/staff-assignments` for a user; `POST/DELETE /api/companies/:companyId/staff-assignments` to mutate).
 
 Legacy columns `assignedSalesmanId` and `assignedProjectManagerId` on `companies` are synced when assignments change, but **assignments that exist only in those legacy fields** (no row in `company_staff_assignments`) will not appear on the Team page until migrated. Use client hub staff editing or create assignment rows via the API to align data.
+
+### Person-specific invites
+
+The portal now supports person-specific onboarding invites instead of relying only on reusable registration tokens.
+
+- `POST /api/invites` can create one-time invites with a custom token, a fixed email, and invite-specific company assignments.
+- `GET /api/auth/invite-preview` powers the register page preview before account creation.
+- `contractor` is now a first-class role and is routed through the shared team workspace with scoped company access.
+- Invite acceptance provisions `company_users` for client invites and `company_staff_assignments` for salesman/employee/contractor invites.
+- `isSuperAdmin` is still manual-only and is never granted from invites.
+
+This rollout depends on D1 migration `0018_invite_company_assignments.sql`.

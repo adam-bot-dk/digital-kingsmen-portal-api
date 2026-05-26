@@ -1,12 +1,106 @@
 import { z } from 'zod';
 
-export const createInviteSchema = z.object({
-  email: z.string().email(),
-  role: z.enum(['admin', 'client', 'salesman', 'employee']),
-  company_id: z.string().uuid().optional(),
-  expires_in_days: z.number().int().min(1).max(90).optional().default(7),
-  send_email: z.coerce.boolean().optional().default(false),
+const inviteRoleSchema = z.enum(['admin', 'client', 'salesman', 'employee', 'contractor']);
+const companyRelationshipSchema = z.enum(['primary_contact', 'contact', 'billing']);
+const inviteAssignmentSchema = z.object({
+  company_id: z.string().uuid(),
+  relationship_type: companyRelationshipSchema.optional(),
+  staff_tag_id: z.string().min(1).optional(),
 });
+
+export const createInviteSchema = z
+  .object({
+    email: z.string().email(),
+    role: inviteRoleSchema,
+    token: z
+      .string()
+      .trim()
+      .min(6)
+      .max(80)
+      .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/)
+      .optional(),
+    company_id: z.string().uuid().optional(),
+    relationship_type: companyRelationshipSchema.optional(),
+    assignments: z.array(inviteAssignmentSchema).max(25).optional(),
+    expires_in_days: z.number().int().min(1).max(90).optional().default(7),
+    send_email: z.coerce.boolean().optional().default(false),
+  })
+  .superRefine((data, ctx) => {
+    const assignmentCount = data.assignments?.length ?? 0;
+    const hasLegacyCompany = Boolean(data.company_id);
+    const isStaffRole = data.role === 'salesman' || data.role === 'employee' || data.role === 'contractor';
+
+    if (data.role === 'admin') {
+      if (hasLegacyCompany || assignmentCount > 0 || data.relationship_type) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Admin invites cannot include company assignments',
+          path: ['assignments'],
+        });
+      }
+      return;
+    }
+
+    if (data.role === 'client') {
+      if (!hasLegacyCompany && assignmentCount === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Client invites need at least one company',
+          path: ['company_id'],
+        });
+      }
+      for (const [index, assignment] of (data.assignments ?? []).entries()) {
+        if (!assignment.relationship_type) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Client invite assignments need a relationship type',
+            path: ['assignments', index, 'relationship_type'],
+          });
+        }
+        if (assignment.staff_tag_id) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Client invite assignments cannot include staff tags',
+            path: ['assignments', index, 'staff_tag_id'],
+          });
+        }
+      }
+      return;
+    }
+
+    if (hasLegacyCompany || data.relationship_type) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Staff invites must use explicit assignments',
+        path: ['assignments'],
+      });
+    }
+
+    if (isStaffRole && assignmentCount === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Staff invites need at least one company assignment',
+        path: ['assignments'],
+      });
+    }
+
+    for (const [index, assignment] of (data.assignments ?? []).entries()) {
+      if (!assignment.staff_tag_id) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Staff invite assignments need a staff tag',
+          path: ['assignments', index, 'staff_tag_id'],
+        });
+      }
+      if (assignment.relationship_type) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Staff invite assignments cannot include contact relationships',
+          path: ['assignments', index, 'relationship_type'],
+        });
+      }
+    }
+  });
 
 export { createConversationSchema } from './conversations';
 

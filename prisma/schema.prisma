@@ -12,6 +12,7 @@ enum UserRole {
   client
   salesman
   employee
+  contractor
 }
 
 enum CompanyStatus {
@@ -212,6 +213,7 @@ model Company {
   callTranscriptions     CallTranscription[]
   conversations          Conversation[]
   invites                Invite[]
+  inviteCompanyAssignments InviteCompanyAssignment[]
   staffAssignments       CompanyStaffAssignment[]
   monthlyServices        CompanyMonthlyService[]
 
@@ -291,6 +293,7 @@ model StaffTag {
   createdAt   DateTime @default(now()) @map("created_at")
 
   assignments CompanyStaffAssignment[]
+  inviteAssignments InviteCompanyAssignment[]
 
   @@map("staff_tags")
 }
@@ -731,8 +734,27 @@ model Invite {
 
   company Company? @relation(fields: [companyId], references: [id])
   creator User     @relation("InviteCreator", fields: [createdBy], references: [id])
+  assignments InviteCompanyAssignment[]
 
   @@map("invites")
+}
+
+model InviteCompanyAssignment {
+  id               String   @id @default(uuid())
+  inviteId         String   @map("invite_id")
+  companyId        String   @map("company_id")
+  relationshipType String?  @map("relationship_type")
+  staffTagId       String?  @map("staff_tag_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  invite   Invite   @relation(fields: [inviteId], references: [id], onDelete: Cascade)
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  staffTag StaffTag? @relation(fields: [staffTagId], references: [id], onDelete: SetNull)
+
+  @@index([inviteId])
+  @@index([companyId])
+  @@index([staffTagId])
+  @@map("invite_company_assignments")
 }
 
 model Nudge {

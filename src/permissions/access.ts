@@ -101,10 +101,10 @@ export async function assertCanModifyTask(user: User, taskId: string): Promise<v
   if (!task) throw new AppError(ErrorCodes.NOT_FOUND, 'Task not found', 404);
 
   if (user.role === 'admin') return;
-  if (user.role === 'employee' && task.assignedTo === user.id) return;
-  if (user.role === 'employee' || user.role === 'salesman') {
+  if ((user.role === 'employee' || user.role === 'contractor') && task.assignedTo === user.id) return;
+  if (user.role === 'employee' || user.role === 'contractor' || user.role === 'salesman') {
     await assertCanAccessProject(user, task.projectId);
-    if (user.role === 'employee' && task.assignedTo !== user.id) {
+    if ((user.role === 'employee' || user.role === 'contractor') && task.assignedTo !== user.id) {
       const project = await prisma.project.findUnique({ where: { id: task.projectId } });
       if (project?.projectManagerId !== user.id) {
         throw new AppError(ErrorCodes.FORBIDDEN, 'Cannot modify this task', 403);

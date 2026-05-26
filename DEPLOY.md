@@ -31,6 +31,10 @@ npm run cf:migrate:staging   # staging D1
 npm run cf:migrate:remote    # production D1
 ```
 
+Current onboarding rollout note:
+
+- Apply migration `0018_invite_company_assignments.sql` before using the new person-specific invite flow in staging or production.
+
 ## GitHub Actions
 
 Workflow: [.github/workflows/deploy.yml](.github/workflows/deploy.yml)

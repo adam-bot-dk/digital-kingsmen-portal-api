@@ -24,7 +24,7 @@ export async function companyWhereForUser(user: User): Promise<Prisma.CompanyWhe
       ],
     };
   }
-  if (user.role === 'employee') {
+  if (user.role === 'employee' || user.role === 'contractor') {
     return {
       OR: [
         { assignedProjectManagerId: user.id },
@@ -61,7 +61,7 @@ export async function projectWhereForUser(user: User): Promise<Prisma.ProjectWhe
       ],
     };
   }
-  if (user.role === 'employee') {
+  if (user.role === 'employee' || user.role === 'contractor') {
     return {
       OR: [
         { projectManagerId: user.id },
@@ -93,7 +93,7 @@ export async function monthlyServiceWhereForUser(
       },
     };
   }
-  if (user.role === 'employee') {
+  if (user.role === 'employee' || user.role === 'contractor') {
     return {
       company: {
         OR: [
@@ -115,7 +115,7 @@ export async function taskWhereForUser(user: User): Promise<Prisma.TaskWhereInpu
   if (user.role === 'client') {
     return { AND: [{ project: projectWhere }, { clientVisible: true }] };
   }
-  if (user.role === 'employee') {
+  if (user.role === 'employee' || user.role === 'contractor') {
     return {
       OR: [
         { assignedTo: user.id },

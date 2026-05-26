@@ -105,7 +105,7 @@ export async function listStaff(req: Request, res: Response, next: NextFunction)
       isActive: true,
       role: { not: UserRole.client },
     };
-    if (roleFilter && ['admin', 'salesman', 'employee'].includes(roleFilter)) {
+    if (roleFilter && ['admin', 'salesman', 'employee', 'contractor'].includes(roleFilter)) {
       where.role = roleFilter as UserRole;
     }
     if (!req.user!.isSuperAdmin) {

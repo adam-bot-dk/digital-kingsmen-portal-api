@@ -7,8 +7,88 @@ import { AppError, ErrorCodes } from '../lib/errors';
 import {
   consumeInvite,
   inviteEmailMatches,
-  requireValidInvite,
+  inviteRoleLabel,
+  requireValidInviteDetails,
 } from './invite.service';
+import { syncCompanyLegacyStaffFields } from './companyStaffAssignments';
+
+function resolvedInviteAssignments(invite: Awaited<ReturnType<typeof requireValidInviteDetails>>) {
+  if (invite.assignments.length > 0) return invite.assignments;
+  if (invite.companyId && invite.role === 'client') {
+    return [
+      {
+        id: `legacy-${invite.id}`,
+        inviteId: invite.id,
+        companyId: invite.companyId,
+        relationshipType: 'primary_contact',
+        staffTagId: null,
+        createdAt: invite.createdAt,
+        company: invite.company ?? null,
+        staffTag: null,
+      },
+    ];
+  }
+  return [];
+}
+
+async function provisionInviteAccess(
+  invite: Awaited<ReturnType<typeof requireValidInviteDetails>>,
+  userId: string,
+): Promise<void> {
+  const assignments = resolvedInviteAssignments(invite);
+  if (assignments.length === 0) return;
+
+  if (invite.role === 'client') {
+    for (const assignment of assignments) {
+      await prisma.companyUser.create({
+        data: {
+          companyId: assignment.companyId,
+          userId,
+          relationshipType: assignment.relationshipType ?? 'contact',
+        },
+      });
+    }
+    return;
+  }
+
+  if (invite.role === 'salesman' || invite.role === 'employee' || invite.role === 'contractor') {
+    const touchedCompanyIds = new Set<string>();
+    for (const assignment of assignments) {
+      if (!assignment.staffTagId) continue;
+      await prisma.companyStaffAssignment.create({
+        data: {
+          companyId: assignment.companyId,
+          userId,
+          staffTagId: assignment.staffTagId,
+        },
+      });
+      touchedCompanyIds.add(assignment.companyId);
+    }
+    for (const companyId of touchedCompanyIds) {
+      await syncCompanyLegacyStaffFields(companyId);
+    }
+  }
+}
+
+function serializeInvitePreview(invite: Awaited<ReturnType<typeof requireValidInviteDetails>>) {
+  return {
+    token: invite.token,
+    email: invite.reusable || invite.email === '*' ? null : invite.email,
+    emailLocked: !invite.reusable && invite.email !== '*',
+    reusable: invite.reusable,
+    role: invite.role,
+    roleLabel: inviteRoleLabel(invite.role),
+    expiresAt: invite.expiresAt,
+    assignments: resolvedInviteAssignments(invite).map((assignment) => ({
+      companyId: assignment.companyId,
+      companyName: assignment.company?.name ?? null,
+      relationshipType: assignment.relationshipType ?? null,
+      staffTagId: assignment.staffTagId ?? null,
+      staffTagLabel: assignment.staffTag?.label ?? null,
+      staffTagSlug: assignment.staffTag?.slug ?? null,
+    })),
+  };
+}
 
 export async function register(data: {
   email: string;
@@ -16,7 +96,7 @@ export async function register(data: {
   full_name: string;
   invite_token: string;
 }) {
-  const invite = await requireValidInvite(data.invite_token.trim());
+  const invite = await requireValidInviteDetails(data.invite_token.trim());
 
   if (!inviteEmailMatches(invite, data.email)) {
     throw new AppError(ErrorCodes.INVALID_INVITE, 'Email does not match invite', 400);
@@ -37,15 +117,7 @@ export async function register(data: {
     },
   });
 
-  if (invite.companyId && invite.role === 'client') {
-    await prisma.companyUser.create({
-      data: {
-        companyId: invite.companyId,
-        userId: user.id,
-        relationshipType: 'primary_contact',
-      },
-    });
-  }
+  await provisionInviteAccess(invite, user.id);
 
   await consumeInvite(invite);
 
@@ -55,6 +127,11 @@ export async function register(data: {
     expiresIn: getExpiresInSeconds(),
     user: sanitizeUser(user),
   };
+}
+
+export async function previewInvite(token: string) {
+  const invite = await requireValidInviteDetails(token);
+  return serializeInvitePreview(invite);
 }
 
 export async function login(email: string, password: string) {

@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
-import { getParam } from '../lib/params';
 import * as authService from '../services/auth.service';
 import { success } from '../lib/apiResponse';
+import { AppError, ErrorCodes } from '../lib/errors';
 
 export async function register(req: Request, res: Response, next: NextFunction) {
   try {
@@ -28,6 +28,19 @@ export async function logout(_req: Request, res: Response) {
 export async function me(req: Request, res: Response, next: NextFunction) {
   try {
     const data = await authService.getMe(req.user!.id);
+    return success(res, data);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function invitePreview(req: Request, res: Response, next: NextFunction) {
+  try {
+    const token = req.query.token;
+    if (typeof token !== 'string' || !token.trim()) {
+      throw new AppError(ErrorCodes.VALIDATION_ERROR, 'Invite token is required', 400);
+    }
+    const data = await authService.previewInvite(token);
     return success(res, data);
   } catch (err) {
     next(err);

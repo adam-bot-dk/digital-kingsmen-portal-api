@@ -254,8 +254,8 @@ export async function salesman(req: Request, res: Response, next: NextFunction) 
 
 export async function employee(req: Request, res: Response, next: NextFunction) {
   try {
-    if (req.user!.role !== 'employee') {
-      throw new AppError(ErrorCodes.FORBIDDEN, 'Employee dashboard only', 403);
+    if (req.user!.role !== 'employee' && req.user!.role !== 'contractor') {
+      throw new AppError(ErrorCodes.FORBIDDEN, 'Team dashboard only', 403);
     }
     const userId = req.user!.id;
     const now = new Date();
