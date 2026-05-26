@@ -136,6 +136,7 @@ model User {
   role         UserRole
   avatarUrl    String?  @map("avatar_url")
   isActive     Boolean  @default(true) @map("is_active")
+  isSuperAdmin Boolean  @default(false) @map("is_super_admin")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -259,6 +260,25 @@ model CompanyMonthlyServiceExpense {
 
   @@index([monthlyServiceId])
   @@map("company_monthly_service_expenses")
+}
+
+model BusinessRecurringExpense {
+  id              String   @id @default(uuid())
+  name            String
+  vendor          String?
+  expenseType     String   @default("other") @map("expense_type")
+  amountCents     Int      @map("amount_cents")
+  currency        String   @default("USD")
+  isActive        Boolean  @default(true) @map("is_active")
+  serviceCategory String?  @map("service_category")
+  startedAt       DateTime? @map("started_at")
+  notes           String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([isActive])
+  @@index([serviceCategory])
+  @@map("business_recurring_expenses")
 }
 
 model StaffTag {

@@ -11,6 +11,10 @@ import {
   BILLABLE_REVENUE_CATEGORIES,
   DEFAULT_SALESMAN_SPLIT_PERCENT,
 } from '../validators/monthlyServices';
+import {
+  computeDefaultPayoutCents,
+  sumRecurringExpenseCents,
+} from '../services/businessFinance.service';
 
 const includeCompany = {
   company: {
@@ -55,21 +59,8 @@ function serializeExpense(row: {
   };
 }
 
-function sumRecurringExpenseCents(
-  expenses: { amountCents: number; isRecurring: boolean }[],
-): number {
-  return expenses.reduce(
-    (sum, e) => sum + (e.isRecurring ? e.amountCents : 0),
-    0,
-  );
-}
-
 function dollarsToCents(amount: number): number {
   return Math.round(amount * 100);
-}
-
-function computeDefaultPayoutCents(monthlyAmountCents: number): number {
-  return Math.round(monthlyAmountCents * (DEFAULT_SALESMAN_SPLIT_PERCENT / 100));
 }
 
 function payoutCentsFromBody(value: unknown): number | null | undefined {
@@ -214,14 +205,22 @@ export async function listAll(req: Request, res: Response, next: NextFunction) {
       where.serviceCategory = { in: [...BILLABLE_REVENUE_CATEGORIES] };
     }
     if (salesmanId) {
+      const companyWhere =
+        typeof where.company === 'object' && where.company
+          ? ({ ...(where.company as Prisma.CompanyWhereInput) } satisfies Prisma.CompanyWhereInput)
+          : ({} satisfies Prisma.CompanyWhereInput);
       where.company = {
-        ...(typeof where.company === 'object' ? where.company : {}),
+        ...companyWhere,
         assignedSalesmanId: salesmanId,
       };
     }
     if (search) {
+      const companyWhere =
+        typeof where.company === 'object' && where.company
+          ? ({ ...(where.company as Prisma.CompanyWhereInput) } satisfies Prisma.CompanyWhereInput)
+          : ({} satisfies Prisma.CompanyWhereInput);
       where.company = {
-        ...(typeof where.company === 'object' ? where.company : {}),
+        ...companyWhere,
         name: textContains(search),
       };
     }

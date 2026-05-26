@@ -49,6 +49,7 @@ export async function applyD1SchemaPatches(db: D1Database): Promise<void> {
     'ALTER TABLE "company_monthly_services" ADD COLUMN "salesman_payout_cents" INTEGER',
     'ALTER TABLE "company_monthly_services" ADD COLUMN "salesman_payout_override" INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE "conversation_members" ADD COLUMN "last_read_at" DATETIME',
+    'ALTER TABLE "users" ADD COLUMN "is_super_admin" INTEGER NOT NULL DEFAULT 0',
   ];
 
   for (const sql of patches) {
@@ -94,5 +95,31 @@ export async function applyD1SchemaPatches(db: D1Database): Promise<void> {
   await runPatch(
     db,
     'CREATE INDEX IF NOT EXISTS "message_mentions_user_id_idx" ON "message_mentions"("user_id")',
+  );
+
+  await runPatch(
+    db,
+    `CREATE TABLE IF NOT EXISTS "business_recurring_expenses" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "name" TEXT NOT NULL,
+      "vendor" TEXT,
+      "expense_type" TEXT NOT NULL DEFAULT 'other',
+      "amount_cents" INTEGER NOT NULL,
+      "currency" TEXT NOT NULL DEFAULT 'USD',
+      "is_active" INTEGER NOT NULL DEFAULT 1,
+      "service_category" TEXT,
+      "started_at" DATETIME,
+      "notes" TEXT,
+      "created_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updated_at" DATETIME NOT NULL
+    )`,
+  );
+  await runPatch(
+    db,
+    'CREATE INDEX IF NOT EXISTS "business_recurring_expenses_is_active_idx" ON "business_recurring_expenses"("is_active")',
+  );
+  await runPatch(
+    db,
+    'CREATE INDEX IF NOT EXISTS "business_recurring_expenses_service_category_idx" ON "business_recurring_expenses"("service_category")',
   );
 }

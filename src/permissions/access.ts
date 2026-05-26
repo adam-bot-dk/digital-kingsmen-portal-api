@@ -11,6 +11,16 @@ export function isAdmin(user: User): boolean {
   return user.role === 'admin';
 }
 
+export function isSuperAdmin(user: User): boolean {
+  return user.role === 'admin' && user.isSuperAdmin;
+}
+
+export function assertSuperAdmin(user: User): void {
+  if (!isSuperAdmin(user)) {
+    throw new AppError(ErrorCodes.FORBIDDEN, 'Super admin access required', 403);
+  }
+}
+
 export async function assertCanAccessCompany(user: User, companyId: string): Promise<void> {
   if (user.role === 'admin') return;
   const where = await import('./filters').then((m) => m.companyWhereForUser(user));

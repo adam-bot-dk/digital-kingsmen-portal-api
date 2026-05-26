@@ -22,6 +22,8 @@ import internalNotesRoutes from './internalNotes.routes';
 import callTranscriptionsRoutes from './callTranscriptions.routes';
 import staffTagsRoutes from './staffTags.routes';
 import monthlyServicesRoutes from './monthlyServices.routes';
+import businessFinanceRoutes from './businessFinance.routes';
+import businessRecurringExpensesRoutes from './businessRecurringExpenses.routes';
 
 const router = Router();
 
@@ -48,5 +50,7 @@ router.use('/internal-notes', internalNotesRoutes);
 router.use('/call-transcriptions', callTranscriptionsRoutes);
 router.use('/staff-tags', staffTagsRoutes);
 router.use('/monthly-services', monthlyServicesRoutes);
+router.use('/business-finance', businessFinanceRoutes);
+router.use('/business-recurring-expenses', businessRecurringExpensesRoutes);
 
 export default router;

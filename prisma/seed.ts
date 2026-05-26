@@ -46,6 +46,7 @@ async function main() {
   await prisma.notification.deleteMany();
   await prisma.announcement.deleteMany();
   await prisma.invite.deleteMany();
+  await prisma.businessRecurringExpense.deleteMany();
   await prisma.companyStaffAssignment.deleteMany();
   await prisma.companyUser.deleteMany();
   await prisma.company.deleteMany();
@@ -61,7 +62,19 @@ async function main() {
       passwordHash,
       fullName: 'Admin User',
       role: UserRole.admin,
+      isSuperAdmin: true,
       phone: '555-0100',
+    },
+  });
+
+  const jonah = await prisma.user.create({
+    data: {
+      email: 'jonah@digitalkingsmen.com',
+      passwordHash,
+      fullName: 'Jonah',
+      role: UserRole.admin,
+      isSuperAdmin: true,
+      phone: '555-0104',
     },
   });
 
@@ -474,11 +487,46 @@ async function main() {
     },
   });
 
+  await prisma.businessRecurringExpense.createMany({
+    data: [
+      {
+        name: 'Ahrefs',
+        vendor: 'Ahrefs',
+        expenseType: 'software',
+        amountCents: 24900,
+        currency: 'USD',
+        isActive: true,
+        serviceCategory: 'seo',
+        notes: 'Shared SEO tooling subscription',
+      },
+      {
+        name: 'Google Ads management contractor',
+        vendor: 'Performance Partner',
+        expenseType: 'contractor',
+        amountCents: 180000,
+        currency: 'USD',
+        isActive: true,
+        serviceCategory: 'google_ads',
+        notes: 'Recurring contractor support across ad accounts',
+      },
+      {
+        name: 'General operations software',
+        vendor: 'Notion',
+        expenseType: 'software',
+        amountCents: 2000,
+        currency: 'USD',
+        isActive: true,
+        serviceCategory: null,
+        notes: 'Business overhead not tied to one client service',
+      },
+    ],
+  });
+
   await ensureRegistrationTokens(admin.id);
 
   console.log('Seed completed.');
   console.log('Demo password for all users:', DEMO_PASSWORD);
-  console.log('Admin:', admin.email);
+  console.log('Super admins:', admin.email, ',', jonah.email);
   console.log('Reusable registration tokens (any email at /register):');
   console.log('  Client:    dk-register-client');
   console.log('  Team:      dk-register-employee');

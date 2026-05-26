@@ -1,6 +1,9 @@
 import { User, UserRole } from '@prisma/client';
 
-export type AuthUser = Pick<User, 'id' | 'email' | 'fullName' | 'phone' | 'role' | 'avatarUrl' | 'isActive' | 'createdAt' | 'updatedAt'>;
+export type AuthUser = Pick<
+  User,
+  'id' | 'email' | 'fullName' | 'phone' | 'role' | 'avatarUrl' | 'isActive' | 'isSuperAdmin' | 'createdAt' | 'updatedAt'
+>;
 
 export function sanitizeUser(user: User): AuthUser {
   const { passwordHash: _, ...safe } = user;

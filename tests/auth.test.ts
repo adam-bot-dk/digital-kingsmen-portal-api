@@ -26,6 +26,7 @@ describe('Auth API', () => {
       expect(res.body.success).toBe(true);
       expect(res.body.data.accessToken).toBeDefined();
       expect(res.body.data.user.email).toBe('admin@digitalkingsmen.com');
+      expect(res.body.data.user.isSuperAdmin).toBe(true);
     } else {
       expect([401, 500]).toContain(res.status);
     }

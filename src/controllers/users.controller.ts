@@ -8,15 +8,37 @@ import { AppError, ErrorCodes } from '../lib/errors';
 import { assertNotClient, assertRole } from '../permissions/access';
 import { STAFF_ASSIGNMENT_INCLUDE } from '../services/companyStaffAssignments';
 import { textContains } from '../lib/searchFilter';
-import { UserRole } from '@prisma/client';
-import type { Prisma } from '@prisma/client';
+import { UserRole, type Prisma, type User } from '@prisma/client';
 
-async function assertCanDeactivateUser(actorId: string, targetId: string): Promise<void> {
-  if (actorId === targetId) {
-    throw new AppError(ErrorCodes.FORBIDDEN, 'You cannot deactivate your own account', 403);
+async function getManagedUserOrThrow(
+  actor: User,
+  targetId: string,
+  options: { allowSelf?: boolean } = {},
+) {
+  if (options.allowSelf && actor.id === targetId) {
+    return actor;
   }
   const target = await prisma.user.findUnique({ where: { id: targetId } });
   if (!target) throw new AppError(ErrorCodes.NOT_FOUND, 'User not found', 404);
+  if (target.isSuperAdmin && !actor.isSuperAdmin) {
+    throw new AppError(ErrorCodes.FORBIDDEN, 'Only the super admin can access this account', 403);
+  }
+  return target;
+}
+
+async function assertCanDeactivateUser(actor: User, targetId: string): Promise<void> {
+  if (actor.id === targetId) {
+    throw new AppError(ErrorCodes.FORBIDDEN, 'You cannot deactivate your own account', 403);
+  }
+  const target = await getManagedUserOrThrow(actor, targetId);
+  if (target.isSuperAdmin && target.isActive) {
+    const activeSuperAdmins = await prisma.user.count({
+      where: { isSuperAdmin: true, isActive: true },
+    });
+    if (activeSuperAdmins <= 1) {
+      throw new AppError(ErrorCodes.FORBIDDEN, 'Cannot deactivate the last active super admin', 403);
+    }
+  }
   if (target.role === UserRole.admin && target.isActive) {
     const activeAdmins = await prisma.user.count({
       where: { role: UserRole.admin, isActive: true },
@@ -30,6 +52,7 @@ async function assertCanDeactivateUser(actorId: string, targetId: string): Promi
 function buildUserListWhere(
   search?: string,
   roleFilter?: string,
+  excludeSuperAdmins = false,
 ): Prisma.UserWhereInput {
   const where: Prisma.UserWhereInput = {};
   if (search) {
@@ -40,6 +63,9 @@ function buildUserListWhere(
   } else if (roleFilter && Object.values(UserRole).includes(roleFilter as UserRole)) {
     where.role = roleFilter as UserRole;
   }
+  if (excludeSuperAdmins) {
+    where.isSuperAdmin = false;
+  }
   return where;
 }
 
@@ -48,7 +74,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
     assertRole(req.user!, 'admin');
     const { page, limit, skip, search, sortBy, sortOrder } = parsePagination(req.query);
     const roleFilter = req.query.role ? String(req.query.role) : undefined;
-    const where = buildUserListWhere(search, roleFilter);
+    const where = buildUserListWhere(search, roleFilter, !req.user!.isSuperAdmin);
     const [users, total] = await Promise.all([
       prisma.user.findMany({
         where,
@@ -81,6 +107,9 @@ export async function listStaff(req: Request, res: Response, next: NextFunction)
     };
     if (roleFilter && ['admin', 'salesman', 'employee'].includes(roleFilter)) {
       where.role = roleFilter as UserRole;
+    }
+    if (!req.user!.isSuperAdmin) {
+      where.isSuperAdmin = false;
     }
     const users = await prisma.user.findMany({
       where,
@@ -315,6 +344,7 @@ export async function getById(req: Request, res: Response, next: NextFunction) {
   try {
     const isSelf = getParam(req, 'id') === req.user!.id;
     if (!isSelf) assertRole(req.user!, 'admin');
+    await getManagedUserOrThrow(req.user!, getParam(req, 'id'), { allowSelf: true });
     const user = await prisma.user.findUnique({ where: { id: getParam(req, 'id') } });
     if (!user) throw new AppError(ErrorCodes.NOT_FOUND, 'User not found', 404);
     return success(res, sanitizeUser(user));
@@ -347,6 +377,7 @@ export async function update(req: Request, res: Response, next: NextFunction) {
   try {
     const isSelf = getParam(req, 'id') === req.user!.id;
     if (!isSelf) assertRole(req.user!, 'admin');
+    await getManagedUserOrThrow(req.user!, getParam(req, 'id'), { allowSelf: true });
     const { email, password, full_name, phone, role, avatar_url, is_active } = req.body;
     const data: Record<string, unknown> = {};
     if (email) data.email = email.toLowerCase();
@@ -357,7 +388,7 @@ export async function update(req: Request, res: Response, next: NextFunction) {
     if (avatar_url !== undefined) data.avatarUrl = avatar_url;
     if (is_active !== undefined && req.user!.role === 'admin') {
       if (is_active === false) {
-        await assertCanDeactivateUser(req.user!.id, getParam(req, 'id'));
+        await assertCanDeactivateUser(req.user!, getParam(req, 'id'));
       }
       data.isActive = is_active;
     }
@@ -371,7 +402,7 @@ export async function update(req: Request, res: Response, next: NextFunction) {
 export async function remove(req: Request, res: Response, next: NextFunction) {
   try {
     assertRole(req.user!, 'admin');
-    await assertCanDeactivateUser(req.user!.id, getParam(req, 'id'));
+    await assertCanDeactivateUser(req.user!, getParam(req, 'id'));
     const user = await prisma.user.update({
       where: { id: getParam(req, 'id') },
       data: { isActive: false },
