@@ -260,9 +260,7 @@ export async function employee(req: Request, res: Response, next: NextFunction) 
     const userId = req.user!.id;
     const now = new Date();
     const inTwoWeeks = new Date(now.getTime() + 14 * 86400000);
-    const projectScope = {
-      OR: [{ projectManagerId: userId }, { teamMembers: { some: { userId } } }],
-    };
+    const projectScope = await projectWhereForUser(req.user!);
 
     const employeeWaitingTaskWhere = {
       archivedAt: null,

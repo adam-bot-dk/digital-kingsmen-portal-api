@@ -5,7 +5,7 @@ import { prisma } from '../lib/prisma';
 import { success, created } from '../lib/apiResponse';
 import { AppError, ErrorCodes } from '../lib/errors';
 import { assertCanAccessCompany, assertNotClient } from '../permissions/access';
-import { companyWhereForUser } from '../permissions/filters';
+import { monthlyServiceWhereForUser as monthlyServiceScopeForUser } from '../permissions/filters';
 import { textContains } from '../lib/searchFilter';
 import {
   BILLABLE_REVENUE_CATEGORIES,
@@ -158,26 +158,19 @@ function serializeMonthlyService(row: {
 }
 
 async function getMonthlyServiceIfAccessible(req: Request, id: string) {
-  const existing = await prisma.companyMonthlyService.findUnique({
-    where: { id },
+  const scope = await monthlyServiceScopeForUser(req.user!);
+  const existing = await prisma.companyMonthlyService.findFirst({
+    where: { AND: [{ id }, scope] },
     include: includeCompany,
   });
   if (!existing) throw new AppError(ErrorCodes.NOT_FOUND, 'Monthly service not found', 404);
-  await assertCanAccessCompany(req.user!, existing.companyId);
   return existing;
-}
-
-async function monthlyServiceWhereForUser(req: Request): Promise<Prisma.CompanyMonthlyServiceWhereInput> {
-  const companyScope = await companyWhereForUser(req.user!);
-  return {
-    company: companyScope,
-  };
 }
 
 export async function listAll(req: Request, res: Response, next: NextFunction) {
   try {
     assertNotClient(req.user!);
-    const where: Prisma.CompanyMonthlyServiceWhereInput = await monthlyServiceWhereForUser(req);
+    const where: Prisma.CompanyMonthlyServiceWhereInput = await monthlyServiceScopeForUser(req.user!);
 
     const category = req.query.category as string | undefined;
     const categoriesRaw = req.query.categories as string | undefined;
@@ -244,13 +237,19 @@ export async function listForCompany(req: Request, res: Response, next: NextFunc
     await assertCanAccessCompany(req.user!, companyId);
 
     const billableOnly = parseBillableOnly(req.query.billable_only);
+    const scope = await monthlyServiceScopeForUser(req.user!);
 
     const rows = await prisma.companyMonthlyService.findMany({
       where: {
-        companyId,
-        ...(billableOnly
-          ? { serviceCategory: { in: [...BILLABLE_REVENUE_CATEGORIES] } }
-          : {}),
+        AND: [
+          scope,
+          {
+            companyId,
+            ...(billableOnly
+              ? { serviceCategory: { in: [...BILLABLE_REVENUE_CATEGORIES] } }
+              : {}),
+          },
+        ],
       },
       include: includeCompany,
       orderBy: [{ status: 'asc' }, { serviceCategory: 'asc' }],

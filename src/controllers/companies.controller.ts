@@ -4,7 +4,7 @@ import { prisma } from '../lib/prisma';
 import { success, created, buildMeta, parsePagination } from '../lib/apiResponse';
 import { AppError, ErrorCodes } from '../lib/errors';
 import { assertCanAccessCompany, assertNotClient, stripClientForbiddenFields } from '../permissions/access';
-import { companyWhereForUser } from '../permissions/filters';
+import { companyWhereForUser, projectWhereForUser } from '../permissions/filters';
 import { textContains } from '../lib/searchFilter';
 import { enrichCompanyFromWebsite } from '../services/company-enrichment';
 import { previewToSnapshot } from '../services/company-enrichment/enrichmentSnapshot';
@@ -75,6 +75,25 @@ function assertCanMutateCompanyLogo(user: { role: string }) {
   }
 }
 
+function restrictCompanyPeopleForUser<
+  T extends {
+    assignedSalesman?: { id: string } | null;
+    assignedProjectManager?: { id: string } | null;
+    staffAssignments?: Array<{ userId: string }>;
+  },
+>(company: T, user: { id: string; role: string }): T {
+  if (user.role === 'admin') return company;
+  return {
+    ...company,
+    assignedSalesman: company.assignedSalesman?.id === user.id ? company.assignedSalesman : null,
+    assignedProjectManager:
+      company.assignedProjectManager?.id === user.id ? company.assignedProjectManager : null,
+    ...(company.staffAssignments
+      ? { staffAssignments: company.staffAssignments.filter((assignment) => assignment.userId === user.id) }
+      : {}),
+  } as T;
+}
+
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
     const { page, limit, skip, search, status, sortBy, sortOrder } = parsePagination(req.query);
@@ -98,7 +117,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
       prisma.company.count({ where }),
     ]);
     const data = companies.map((c) =>
-      mapCompanyLogoFields(c, req.user!.role === 'client'),
+      mapCompanyLogoFields(restrictCompanyPeopleForUser(c, req.user!), req.user!.role === 'client'),
     );
     return success(res, data, 200, buildMeta(page, limit, total));
   } catch (err) {
@@ -109,20 +128,29 @@ export async function list(req: Request, res: Response, next: NextFunction) {
 export async function getById(req: Request, res: Response, next: NextFunction) {
   try {
     await assertCanAccessCompany(req.user!, getParam(req, 'id'));
+    const projectScope = await projectWhereForUser(req.user!);
+    const staffAssignmentsWhere = req.user!.role === 'admin' ? undefined : { userId: req.user!.id };
     const company = await prisma.company.findUnique({
       where: { id: getParam(req, 'id') },
       include: {
         assignedSalesman: { select: { id: true, fullName: true, email: true } },
         assignedProjectManager: { select: { id: true, fullName: true, email: true } },
         staffAssignments: {
+          where: staffAssignmentsWhere,
           include: STAFF_ASSIGNMENT_INCLUDE,
           orderBy: [{ staffTag: { sortOrder: 'asc' } }, { createdAt: 'asc' }],
         },
-        projects: { select: { id: true, name: true, status: true, overallProgress: true } },
+        projects: {
+          where: projectScope,
+          select: { id: true, name: true, status: true, overallProgress: true },
+        },
       },
     });
     if (!company) throw new AppError(ErrorCodes.NOT_FOUND, 'Company not found', 404);
-    return success(res, mapCompanyLogoFields(company, req.user!.role === 'client'));
+    return success(
+      res,
+      mapCompanyLogoFields(restrictCompanyPeopleForUser(company, req.user!), req.user!.role === 'client'),
+    );
   } catch (err) {
     next(err);
   }

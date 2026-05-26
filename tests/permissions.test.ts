@@ -12,6 +12,12 @@ async function login(email: string): Promise<string | null> {
   return res.body.data.accessToken;
 }
 
+async function getMe(token: string) {
+  const res = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${token}`);
+  if (res.status !== 200) return null;
+  return res.body.data.user as { id: string; email: string };
+}
+
 describe('Permissions API', () => {
   it('client cannot access internal notes', async () => {
     const token = await login('client-pure@example.com');
@@ -75,6 +81,69 @@ describe('Permissions API', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
+  });
+
+  it('salesman company responses only include their own staff context', async () => {
+    const token = await login('salesman@digitalkingsmen.com');
+    if (!token) return;
+
+    const me = await getMe(token);
+    if (!me) return;
+
+    const list = await request(app).get('/api/companies').set('Authorization', `Bearer ${token}`);
+    expect(list.status).toBe(200);
+    expect(list.body.success).toBe(true);
+    if (!list.body.data?.length) return;
+
+    for (const company of list.body.data) {
+      expect(company.assignedProjectManager ?? null).toBeNull();
+      if (company.assignedSalesman) {
+        expect(company.assignedSalesman.id).toBe(me.id);
+      }
+    }
+
+    const detail = await request(app)
+      .get(`/api/companies/${list.body.data[0].id}`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(detail.status).toBe(200);
+    expect(detail.body.success).toBe(true);
+    expect(detail.body.data.assignedProjectManager ?? null).toBeNull();
+    expect(Array.isArray(detail.body.data.staffAssignments)).toBe(true);
+    for (const assignment of detail.body.data.staffAssignments) {
+      expect(assignment.userId).toBe(me.id);
+    }
+  });
+
+  it('employee company responses only include their own staff context', async () => {
+    const token = await login('employee@digitalkingsmen.com');
+    if (!token) return;
+
+    const me = await getMe(token);
+    if (!me) return;
+
+    const list = await request(app).get('/api/companies').set('Authorization', `Bearer ${token}`);
+    expect(list.status).toBe(200);
+    expect(list.body.success).toBe(true);
+    if (!list.body.data?.length) return;
+
+    for (const company of list.body.data) {
+      expect(company.assignedSalesman ?? null).toBeNull();
+      expect(company.assignedProjectManager ?? null).toBeNull();
+    }
+
+    const detail = await request(app)
+      .get(`/api/companies/${list.body.data[0].id}`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(detail.status).toBe(200);
+    expect(detail.body.success).toBe(true);
+    expect(detail.body.data.assignedSalesman ?? null).toBeNull();
+    expect(detail.body.data.assignedProjectManager ?? null).toBeNull();
+    expect(Array.isArray(detail.body.data.staffAssignments)).toBe(true);
+    for (const assignment of detail.body.data.staffAssignments) {
+      expect(assignment.userId).toBe(me.id);
+    }
   });
 
   it('client cannot PATCH project internal fields', async () => {

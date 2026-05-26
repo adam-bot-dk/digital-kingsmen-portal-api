@@ -57,6 +57,7 @@ export async function projectWhereForUser(user: User): Promise<Prisma.ProjectWhe
       OR: [
         { assignedSalesmanId: user.id },
         { company: { assignedSalesmanId: user.id } },
+        { company: { staffAssignments: { some: { userId: user.id } } } },
       ],
     };
   }
@@ -66,7 +67,40 @@ export async function projectWhereForUser(user: User): Promise<Prisma.ProjectWhe
         { projectManagerId: user.id },
         { teamMembers: { some: { userId: user.id } } },
         { tasks: { some: { assignedTo: user.id } } },
+        { company: { assignedProjectManagerId: user.id } },
+        { company: { staffAssignments: { some: { userId: user.id } } } },
       ],
+    };
+  }
+  return { id: 'never' };
+}
+
+export async function monthlyServiceWhereForUser(
+  user: User,
+): Promise<Prisma.CompanyMonthlyServiceWhereInput> {
+  if (user.role === 'admin') return {};
+  if (user.role === 'client') {
+    const companyIds = await getClientCompanyIds(user.id);
+    return { companyId: { in: companyIds } };
+  }
+  if (user.role === 'salesman') {
+    return {
+      company: {
+        OR: [
+          { assignedSalesmanId: user.id },
+          { staffAssignments: { some: { userId: user.id } } },
+        ],
+      },
+    };
+  }
+  if (user.role === 'employee') {
+    return {
+      company: {
+        OR: [
+          { assignedProjectManagerId: user.id },
+          { staffAssignments: { some: { userId: user.id } } },
+        ],
+      },
     };
   }
   return { id: 'never' };
