@@ -50,4 +50,8 @@ export const listMonthlyServicesQuerySchema = z.object({
   billable_only: z
     .union([z.literal('true'), z.literal('false'), z.literal('1'), z.literal('0')])
     .optional(),
+  billing_period_start: z.string().optional(),
+  payment_status: z
+    .enum(['unpaid', 'partial', 'paid', 'overdue', 'waived', 'failed'])
+    .optional(),
 });

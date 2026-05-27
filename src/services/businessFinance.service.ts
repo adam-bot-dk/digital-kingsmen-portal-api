@@ -191,6 +191,9 @@ function addContractor(
 }
 
 function effectiveSalesmanPayoutCents(service: BusinessFinanceMonthlyServiceRow): number {
+  if (!service.company?.assignedSalesman?.id) {
+    return 0;
+  }
   if (service.salesmanPayoutOverride) {
     return service.salesmanPayoutCents ?? 0;
   }

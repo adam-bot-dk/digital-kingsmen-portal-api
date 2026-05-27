@@ -121,4 +121,39 @@ describe('buildBusinessFinanceSummary', () => {
       lineCount: 1,
     });
   });
+
+  it('treats services without an assigned salesman as zero payout', () => {
+    const summary = buildBusinessFinanceSummary({
+      monthlyServices: [
+        {
+          id: 'svc-unassigned',
+          companyId: 'company-3',
+          serviceCategory: 'seo',
+          monthlyAmountCents: 100_000,
+          salesmanPayoutCents: 45_000,
+          salesmanPayoutOverride: true,
+          company: {
+            id: 'company-3',
+            assignedSalesman: null,
+          },
+          expenses: [],
+        },
+      ],
+      businessRecurringExpenses: [],
+    });
+
+    expect(summary.totals.recurringRevenueCents).toBe(100_000);
+    expect(summary.totals.serviceLinkedSpendCents).toBe(0);
+    expect(summary.totals.netContributionCents).toBe(100_000);
+    expect(summary.services[0]).toMatchObject({
+      serviceCategory: 'seo',
+      revenueCents: 100_000,
+      salesmanPayoutCents: 0,
+      serviceExpenseCents: 0,
+      netContributionCents: 100_000,
+      activeLineCount: 1,
+      clientCount: 1,
+    });
+    expect(summary.services[0].salesmen).toEqual([]);
+  });
 });

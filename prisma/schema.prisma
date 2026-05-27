@@ -27,6 +27,20 @@ enum MonthlyServiceStatus {
   cancelled
 }
 
+enum BillingPaymentStatus {
+  unpaid
+  partial
+  paid
+  overdue
+  waived
+  failed
+}
+
+enum BillingAllocationLineStatus {
+  billable
+  waived
+}
+
 enum ProjectStatus {
   not_started
   in_progress
@@ -198,6 +212,7 @@ model Company {
   notes                  String?
   logoUrl                String?       @map("logo_url")
   logoMimeType           String?       @map("logo_mime_type")
+  billingDueDayOfMonth   Int           @default(1) @map("billing_due_day_of_month")
   createdAt              DateTime      @default(now()) @map("created_at")
   updatedAt              DateTime      @updatedAt @map("updated_at")
 
@@ -216,6 +231,7 @@ model Company {
   inviteCompanyAssignments InviteCompanyAssignment[]
   staffAssignments       CompanyStaffAssignment[]
   monthlyServices        CompanyMonthlyService[]
+  billingPeriods         CompanyBillingPeriod[]
 
   @@index([assignedSalesmanId])
   @@map("companies")
@@ -236,13 +252,62 @@ model CompanyMonthlyService {
   createdAt          DateTime             @default(now()) @map("created_at")
   updatedAt          DateTime             @updatedAt @map("updated_at")
 
-  company  Company                        @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  expenses CompanyMonthlyServiceExpense[]
+  company            Company                        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  expenses           CompanyMonthlyServiceExpense[]
+  billingAllocations CompanyBillingAllocation[]
 
   @@index([companyId])
   @@index([serviceCategory])
   @@index([status])
   @@map("company_monthly_services")
+}
+
+model CompanyBillingPeriod {
+  id                  String               @id @default(uuid())
+  companyId           String               @map("company_id")
+  periodStart         DateTime             @map("period_start")
+  periodEnd           DateTime             @map("period_end")
+  dueDate             DateTime             @map("due_date")
+  expectedAmountCents Int                  @map("expected_amount_cents")
+  paidAmountCents     Int                  @default(0) @map("paid_amount_cents")
+  paymentStatus       BillingPaymentStatus @default(unpaid) @map("payment_status")
+  currency            String               @default("USD")
+  paidAt              DateTime?            @map("paid_at")
+  waivedAt            DateTime?            @map("waived_at")
+  notes               String?
+  externalReference   String?              @map("external_reference")
+  createdById         String?              @map("created_by_id")
+  updatedById         String?              @map("updated_by_id")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+
+  company     Company                    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  allocations CompanyBillingAllocation[]
+
+  @@unique([companyId, periodStart])
+  @@index([companyId])
+  @@index([paymentStatus])
+  @@index([dueDate])
+  @@index([periodStart])
+  @@map("company_billing_periods")
+}
+
+model CompanyBillingAllocation {
+  id                  String                      @id @default(uuid())
+  billingPeriodId     String                      @map("billing_period_id")
+  monthlyServiceId    String                      @map("monthly_service_id")
+  expectedAmountCents Int                         @map("expected_amount_cents")
+  lineStatus          BillingAllocationLineStatus @default(billable) @map("line_status")
+  createdAt           DateTime                    @default(now()) @map("created_at")
+  updatedAt           DateTime                    @updatedAt @map("updated_at")
+
+  billingPeriod  CompanyBillingPeriod  @relation(fields: [billingPeriodId], references: [id], onDelete: Cascade)
+  monthlyService CompanyMonthlyService @relation(fields: [monthlyServiceId], references: [id], onDelete: Cascade)
+
+  @@unique([billingPeriodId, monthlyServiceId])
+  @@index([billingPeriodId])
+  @@index([monthlyServiceId])
+  @@map("company_billing_allocations")
 }
 
 model CompanyMonthlyServiceExpense {

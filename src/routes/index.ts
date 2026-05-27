@@ -24,6 +24,8 @@ import staffTagsRoutes from './staffTags.routes';
 import monthlyServicesRoutes from './monthlyServices.routes';
 import businessFinanceRoutes from './businessFinance.routes';
 import businessRecurringExpensesRoutes from './businessRecurringExpenses.routes';
+import billingRoutes from './billing.routes';
+import companyBillingRoutes from './companyBilling.routes';
 
 const router = Router();
 
@@ -52,5 +54,7 @@ router.use('/staff-tags', staffTagsRoutes);
 router.use('/monthly-services', monthlyServicesRoutes);
 router.use('/business-finance', businessFinanceRoutes);
 router.use('/business-recurring-expenses', businessRecurringExpensesRoutes);
+router.use('/billing', billingRoutes);
+router.use('/companies/:companyId/billing', companyBillingRoutes);
 
 export default router;

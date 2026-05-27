@@ -42,6 +42,7 @@ function mapCompanyBody(body: Record<string, unknown>) {
     assignedProjectManagerId: body.assigned_project_manager_id as string | undefined,
     status: body.status as 'active' | 'inactive' | 'prospect' | undefined,
     notes: body.notes as string | undefined,
+    billingDueDayOfMonth: body.billing_due_day_of_month as number | undefined,
   };
   if (enrichmentApplied) {
     data.enrichmentSource = (body.enrichment_source as string) || 'website';
@@ -209,6 +210,15 @@ export async function update(req: Request, res: Response, next: NextFunction) {
       where: { id: getParam(req, 'id') },
       data: mapCompanyBody(body) as Parameters<typeof prisma.company.update>[0]['data'],
     });
+    if (body.assigned_salesman_id !== undefined && !company.assignedSalesmanId) {
+      await prisma.companyMonthlyService.updateMany({
+        where: { companyId: company.id },
+        data: {
+          salesmanPayoutCents: null,
+          salesmanPayoutOverride: false,
+        },
+      });
+    }
     return success(res, mapCompanyLogoFields(company));
   } catch (err) {
     next(err);

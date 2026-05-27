@@ -29,6 +29,7 @@ export const createCompanySchema = z.object({
   assigned_project_manager_id: z.string().uuid().optional(),
   status: z.enum(['active', 'inactive', 'prospect']).optional(),
   notes: z.string().optional(),
+  billing_due_day_of_month: z.number().int().min(1).max(28).optional(),
   staff_assignments: z.array(createStaffAssignmentSchema).optional(),
   import_logo_from_url: z.string().url().optional(),
   ...addressFields,

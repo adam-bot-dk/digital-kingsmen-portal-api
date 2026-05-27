@@ -19,13 +19,24 @@ export async function syncCompanyLegacyStaffFields(companyId: string) {
     }
   }
 
+  const assignedSalesmanId = bySlug.get('salesman') ?? null;
   await prisma.company.update({
     where: { id: companyId },
     data: {
-      assignedSalesmanId: bySlug.get('salesman') ?? null,
+      assignedSalesmanId,
       assignedProjectManagerId: bySlug.get('project_manager') ?? null,
     },
   });
+
+  if (!assignedSalesmanId) {
+    await prisma.companyMonthlyService.updateMany({
+      where: { companyId },
+      data: {
+        salesmanPayoutCents: null,
+        salesmanPayoutOverride: false,
+      },
+    });
+  }
 }
 
 export async function assertStaffAssignee(userId: string) {

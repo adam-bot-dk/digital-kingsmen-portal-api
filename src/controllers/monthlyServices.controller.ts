@@ -15,12 +15,25 @@ import {
   computeDefaultPayoutCents,
   sumRecurringExpenseCents,
 } from '../services/businessFinance.service';
+import { mapNestedCompanyLogo } from '../lib/companyResponse';
+import {
+  assertCanManageMonthlyServices,
+  canViewMonthlyServiceFinancials,
+} from '../lib/monthlyServicePermissions';
+import { canViewBilling } from '../lib/billingPermissions';
+import {
+  getBillingSummariesForCompanies,
+  onMonthlyServiceStatusChange,
+} from '../services/billing.service';
+import type { UserRole } from '@prisma/client';
+import { BillingPaymentStatus } from '@prisma/client';
 
 const includeCompany = {
   company: {
     select: {
       id: true,
       name: true,
+      logoUrl: true,
       status: true,
       assignedSalesman: { select: { id: true, fullName: true, email: true } },
     },
@@ -30,27 +43,30 @@ const includeCompany = {
   },
 } as const;
 
-function serializeExpense(row: {
-  id: string;
-  monthlyServiceId: string;
-  name: string;
-  vendor: string | null;
-  expenseType: string;
-  amountCents: number;
-  currency: string;
-  isRecurring: boolean;
-  notes: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-}) {
+function serializeExpense(
+  row: {
+    id: string;
+    monthlyServiceId: string;
+    name: string;
+    vendor: string | null;
+    expenseType: string;
+    amountCents: number;
+    currency: string;
+    isRecurring: boolean;
+    notes: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  },
+  includeFinancials: boolean,
+) {
   return {
     id: row.id,
     monthlyServiceId: row.monthlyServiceId,
     name: row.name,
     vendor: row.vendor,
     expenseType: row.expenseType,
-    amountCents: row.amountCents,
-    amount: row.amountCents / 100,
+    amountCents: includeFinancials ? row.amountCents : null,
+    amount: includeFinancials ? row.amountCents / 100 : null,
     currency: row.currency,
     isRecurring: row.isRecurring,
     notes: row.notes,
@@ -78,7 +94,14 @@ function resolvePayoutOnWrite(
   monthlyAmountCents: number,
   override: boolean,
   explicitPayoutCents: number | null | undefined,
+  hasAssignedSalesman: boolean,
 ): { salesmanPayoutCents: number | null; salesmanPayoutOverride: boolean } {
+  if (!hasAssignedSalesman) {
+    return {
+      salesmanPayoutCents: null,
+      salesmanPayoutOverride: false,
+    };
+  }
   if (override) {
     return {
       salesmanPayoutCents: explicitPayoutCents ?? null,
@@ -91,7 +114,8 @@ function resolvePayoutOnWrite(
   };
 }
 
-function serializeMonthlyService(row: {
+function serializeMonthlyService(
+  row: {
   id: string;
   companyId: string;
   serviceCategory: string;
@@ -108,6 +132,7 @@ function serializeMonthlyService(row: {
   company?: {
     id: string;
     name: string;
+    logoUrl: string | null;
     status: string;
     assignedSalesman?: { id: string; fullName: string; email: string } | null;
   };
@@ -124,37 +149,53 @@ function serializeMonthlyService(row: {
     createdAt: Date;
     updatedAt: Date;
   }[];
-}) {
+  },
+  viewerRole: UserRole,
+) {
+  const includeFinancials = canViewMonthlyServiceFinancials(viewerRole);
+  const hasAssignedSalesman = Boolean(row.company?.assignedSalesman?.id);
   const monthlyAmount = row.monthlyAmountCents / 100;
-  const defaultSalesmanPayout = computeDefaultPayoutCents(row.monthlyAmountCents) / 100;
-  const salesmanPayout = row.salesmanPayoutOverride
-    ? row.salesmanPayoutCents != null
-      ? row.salesmanPayoutCents / 100
-      : null
-    : defaultSalesmanPayout;
+  const defaultSalesmanPayout = hasAssignedSalesman
+    ? computeDefaultPayoutCents(row.monthlyAmountCents) / 100
+    : 0;
+  const salesmanPayout = !hasAssignedSalesman
+    ? null
+    : row.salesmanPayoutOverride
+      ? row.salesmanPayoutCents != null
+        ? row.salesmanPayoutCents / 100
+        : null
+      : defaultSalesmanPayout;
   const effectivePayout = salesmanPayout ?? 0;
   const expenses = row.expenses ?? [];
   const totalExpensesCents = sumRecurringExpenseCents(expenses);
   const totalExpenses = totalExpensesCents / 100;
   const salesmanSplitPercent =
-    row.salesmanPayoutOverride && monthlyAmount > 0 && salesmanPayout != null
+    !hasAssignedSalesman
+      ? 0
+      : row.salesmanPayoutOverride && monthlyAmount > 0 && salesmanPayout != null
       ? Math.round((salesmanPayout / monthlyAmount) * 1000) / 10
       : DEFAULT_SALESMAN_SPLIT_PERCENT;
 
-  const { expenses: _rawExpenses, ...rest } = row;
+  const { expenses: _rawExpenses, company, ...rest } = row;
 
-  return {
+  const payload = {
     ...rest,
-    monthlyAmount,
-    defaultSalesmanPayout,
-    salesmanPayout,
-    salesmanPayoutOverride: row.salesmanPayoutOverride,
-    salesmanSplitPercent,
-    expenses: expenses.map(serializeExpense),
-    totalExpensesCents,
-    totalExpenses,
-    netAmount: monthlyAmount - effectivePayout - totalExpenses,
+    company: mapNestedCompanyLogo(company),
+    monthlyAmount: includeFinancials ? monthlyAmount : null,
+    salesmanPayoutCents:
+      includeFinancials && hasAssignedSalesman ? row.salesmanPayoutCents : null,
+    defaultSalesmanPayout: includeFinancials ? defaultSalesmanPayout : null,
+    salesmanPayout: includeFinancials ? salesmanPayout : null,
+    salesmanPayoutOverride:
+      includeFinancials && hasAssignedSalesman ? row.salesmanPayoutOverride : false,
+    salesmanSplitPercent: includeFinancials ? salesmanSplitPercent : null,
+    expenses: expenses.map((expense) => serializeExpense(expense, includeFinancials)),
+    totalExpensesCents: includeFinancials ? totalExpensesCents : null,
+    totalExpenses: includeFinancials ? totalExpenses : null,
+    netAmount: includeFinancials ? monthlyAmount - effectivePayout - totalExpenses : null,
   };
+
+  return payload;
 }
 
 async function getMonthlyServiceIfAccessible(req: Request, id: string) {
@@ -218,13 +259,59 @@ export async function listAll(req: Request, res: Response, next: NextFunction) {
       };
     }
 
+    const paymentStatusFilter = req.query.payment_status as BillingPaymentStatus | undefined;
+    const billingPeriodStartRaw = req.query.billing_period_start as string | undefined;
+
     const rows = await prisma.companyMonthlyService.findMany({
       where,
       include: includeCompany,
       orderBy: [{ company: { name: 'asc' } }, { serviceCategory: 'asc' }],
     });
 
-    return success(res, rows.map(serializeMonthlyService));
+    const billingByCompany = new Map<
+      string,
+      {
+        paymentStatus: BillingPaymentStatus;
+        expectedAmount: number | null;
+        paidAmount: number | null;
+        periodStart: string;
+        dueDate: string;
+      } | null
+    >();
+
+    if (canViewBilling(req.user!.role)) {
+      const companyIds = [...new Set(rows.map((r) => r.companyId))];
+      const summaries = await getBillingSummariesForCompanies(
+        companyIds,
+        billingPeriodStartRaw ? new Date(billingPeriodStartRaw) : undefined,
+      );
+      const includeFinancials = canViewMonthlyServiceFinancials(req.user!.role);
+      for (const [companyId, summary] of summaries) {
+        billingByCompany.set(companyId, {
+          paymentStatus: summary.paymentStatus,
+          expectedAmount: includeFinancials ? summary.expectedAmountCents / 100 : null,
+          paidAmount: includeFinancials ? summary.paidAmountCents / 100 : null,
+          periodStart: summary.periodStart.toISOString(),
+          dueDate: summary.dueDate.toISOString(),
+        });
+      }
+    }
+
+    let serialized = rows.map((row) => {
+      const base = serializeMonthlyService(row, req.user!.role);
+      const billing = billingByCompany.get(row.companyId);
+      return billing ? { ...base, companyBilling: billing } : base;
+    });
+
+    if (paymentStatusFilter) {
+      serialized = serialized.filter((row) => {
+        const billing = (row as { companyBilling?: { paymentStatus: BillingPaymentStatus } })
+          .companyBilling;
+        return billing?.paymentStatus === paymentStatusFilter;
+      });
+    }
+
+    return success(res, serialized);
   } catch (err) {
     next(err);
   }
@@ -255,7 +342,7 @@ export async function listForCompany(req: Request, res: Response, next: NextFunc
       orderBy: [{ status: 'asc' }, { serviceCategory: 'asc' }],
     });
 
-    return success(res, rows.map(serializeMonthlyService));
+    return success(res, rows.map((row) => serializeMonthlyService(row, req.user!.role)));
   } catch (err) {
     next(err);
   }
@@ -264,8 +351,14 @@ export async function listForCompany(req: Request, res: Response, next: NextFunc
 export async function createForCompany(req: Request, res: Response, next: NextFunction) {
   try {
     assertNotClient(req.user!);
+    assertCanManageMonthlyServices(req.user!);
     const companyId = getParam(req, 'companyId');
     await assertCanAccessCompany(req.user!, companyId);
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { assignedSalesmanId: true },
+    });
+    if (!company) throw new AppError(ErrorCodes.NOT_FOUND, 'Company not found', 404);
 
     const {
       service_category: serviceCategory,
@@ -284,6 +377,7 @@ export async function createForCompany(req: Request, res: Response, next: NextFu
       monthlyAmountCents,
       !!payoutOverride,
       payoutCentsFromBody(salesmanPayout),
+      Boolean(company.assignedSalesmanId),
     );
 
     const row = await prisma.companyMonthlyService.create({
@@ -302,7 +396,7 @@ export async function createForCompany(req: Request, res: Response, next: NextFu
       include: includeCompany,
     });
 
-    return created(res, serializeMonthlyService(row));
+    return created(res, serializeMonthlyService(row, req.user!.role));
   } catch (err) {
     next(err);
   }
@@ -311,6 +405,7 @@ export async function createForCompany(req: Request, res: Response, next: NextFu
 export async function update(req: Request, res: Response, next: NextFunction) {
   try {
     assertNotClient(req.user!);
+    assertCanManageMonthlyServices(req.user!);
     const id = getParam(req, 'id');
     const existing = await getMonthlyServiceIfAccessible(req, id);
 
@@ -339,12 +434,19 @@ export async function update(req: Request, res: Response, next: NextFunction) {
       }
     }
 
+    const payout = resolvePayoutOnWrite(
+      monthlyAmountCents,
+      payoutOverride,
+      salesmanPayoutCents,
+      Boolean(existing.company?.assignedSalesman?.id),
+    );
+
     const data: Prisma.CompanyMonthlyServiceUpdateInput = {
       ...(body.service_category !== undefined && { serviceCategory: body.service_category }),
       ...(body.label !== undefined && { label: body.label }),
       ...(body.monthly_amount !== undefined && { monthlyAmountCents }),
-      salesmanPayoutCents,
-      salesmanPayoutOverride: payoutOverride,
+      salesmanPayoutCents: payout.salesmanPayoutCents,
+      salesmanPayoutOverride: payout.salesmanPayoutOverride,
       ...(body.currency !== undefined && { currency: body.currency.toUpperCase() }),
       ...(body.status !== undefined && { status: body.status }),
       ...(body.description !== undefined && { description: body.description }),
@@ -359,7 +461,11 @@ export async function update(req: Request, res: Response, next: NextFunction) {
       include: includeCompany,
     });
 
-    return success(res, serializeMonthlyService(row));
+    if (body.status !== undefined && body.status !== existing.status) {
+      await onMonthlyServiceStatusChange(id, body.status as MonthlyServiceStatus);
+    }
+
+    return success(res, serializeMonthlyService(row, req.user!.role));
   } catch (err) {
     next(err);
   }
@@ -368,6 +474,7 @@ export async function update(req: Request, res: Response, next: NextFunction) {
 export async function remove(req: Request, res: Response, next: NextFunction) {
   try {
     assertNotClient(req.user!);
+    assertCanManageMonthlyServices(req.user!);
     const id = getParam(req, 'id');
     await getMonthlyServiceIfAccessible(req, id);
 
@@ -382,7 +489,8 @@ export async function listExpenses(req: Request, res: Response, next: NextFuncti
   try {
     assertNotClient(req.user!);
     const service = await getMonthlyServiceIfAccessible(req, getParam(req, 'id'));
-    return success(res, service.expenses.map(serializeExpense));
+    const includeFinancials = canViewMonthlyServiceFinancials(req.user!.role);
+    return success(res, service.expenses.map((expense) => serializeExpense(expense, includeFinancials)));
   } catch (err) {
     next(err);
   }
@@ -391,6 +499,7 @@ export async function listExpenses(req: Request, res: Response, next: NextFuncti
 export async function createExpense(req: Request, res: Response, next: NextFunction) {
   try {
     assertNotClient(req.user!);
+    assertCanManageMonthlyServices(req.user!);
     const service = await getMonthlyServiceIfAccessible(req, getParam(req, 'id'));
     const {
       name,
@@ -415,7 +524,10 @@ export async function createExpense(req: Request, res: Response, next: NextFunct
       },
     });
 
-    return created(res, serializeExpense(row));
+    return created(
+      res,
+      serializeExpense(row, canViewMonthlyServiceFinancials(req.user!.role)),
+    );
   } catch (err) {
     next(err);
   }
@@ -424,6 +536,7 @@ export async function createExpense(req: Request, res: Response, next: NextFunct
 export async function updateExpense(req: Request, res: Response, next: NextFunction) {
   try {
     assertNotClient(req.user!);
+    assertCanManageMonthlyServices(req.user!);
     await getMonthlyServiceIfAccessible(req, getParam(req, 'id'));
     const expenseId = getParam(req, 'expenseId');
     const existing = await prisma.companyMonthlyServiceExpense.findFirst({
@@ -445,7 +558,7 @@ export async function updateExpense(req: Request, res: Response, next: NextFunct
       },
     });
 
-    return success(res, serializeExpense(row));
+    return success(res, serializeExpense(row, canViewMonthlyServiceFinancials(req.user!.role)));
   } catch (err) {
     next(err);
   }
@@ -454,6 +567,7 @@ export async function updateExpense(req: Request, res: Response, next: NextFunct
 export async function removeExpense(req: Request, res: Response, next: NextFunction) {
   try {
     assertNotClient(req.user!);
+    assertCanManageMonthlyServices(req.user!);
     await getMonthlyServiceIfAccessible(req, getParam(req, 'id'));
     const expenseId = getParam(req, 'expenseId');
     const existing = await prisma.companyMonthlyServiceExpense.findFirst({
